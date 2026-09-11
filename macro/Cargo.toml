@@ -1,10 +1,15 @@
 [package]
 name = "topcoat-css-macro"
 description = "Procedural macros for topcoat-css"
+documentation = "https://docs.rs/topcoat-css-macro"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+include = ["src/**", "Cargo.toml", "README.md", "LICENSE.md"]
 
 [lib]
 proc-macro = true

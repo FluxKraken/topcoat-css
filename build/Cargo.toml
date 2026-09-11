@@ -1,10 +1,15 @@
 [package]
 name = "topcoat-css-build"
 description = "Build-script compiler and stylesheet collection for topcoat-css"
+documentation = "https://docs.rs/topcoat-css-build"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+include = ["src/**", "tests/**", "Cargo.toml", "README.md", "LICENSE.md"]
 
 [dependencies]
 lightningcss = { version = "=1.0.0-alpha.72", default-features = false, features = [

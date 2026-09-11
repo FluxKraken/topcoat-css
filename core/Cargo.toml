@@ -1,10 +1,15 @@
 [package]
 name = "topcoat-css-core"
 description = "Shared build manifest for topcoat-css (implementation detail)"
+documentation = "https://docs.rs/topcoat-css-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+include = ["src/**", "Cargo.toml", "README.md", "LICENSE.md"]
 
 [dependencies]
 proc-macro2.workspace = true

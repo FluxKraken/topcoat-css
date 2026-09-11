@@ -1,11 +1,15 @@
 [workspace]
+members = ["build", "core", "macro"]
 resolver = "3"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust_version = "1.88"
-licence = "MIT"
+rust-version = "1.88"
+license = "MIT"
+readme = "README.md"
+keywords = ["css", "css-modules", "topcoat", "web"]
+categories = ["web-programming", "development-tools::build-utils"]
 
 [workspace.dependencies]
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
@@ -19,11 +23,15 @@ topcoat-css-macro = { path = "macro", version = "=0.1.0" }
 [package]
 name = "topcoat-css"
 description = "Local CSS modules & macro for Topcoat Web Framework"
+documentation = "https://docs.rs/topcoat-css"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-readme = "README.md"
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+include = ["src/**", "Cargo.toml", "README.md", "LICENSE.md"]
 
 [dependencies]
 topcoat-css-macro.workspace = true

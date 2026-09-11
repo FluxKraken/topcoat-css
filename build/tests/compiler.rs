@@ -245,3 +245,24 @@ fn does_not_rewrite_unchanged_outputs() {
         fs::metadata(second.stylesheet).unwrap().modified().unwrap()
     );
 }
+
+#[test]
+fn resource_urls_require_a_root_fragment_or_valid_scheme() {
+    for url in [
+        "/images/photo.png",
+        "//example.com/photo.png",
+        "https://example.com/photo.png",
+        "data:image/png;base64,AAAA",
+        "#mask",
+    ] {
+        Project::new(&raw(&format!(".card {{ background: url('{url}'); }}"))).build();
+    }
+    for url in ["images/icon:dark.png", "./https:photo.png", "123:photo.png"] {
+        let error = Project::new(&raw(&format!(".card {{ background: url('{url}'); }}")))
+            .config()
+            .compile()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("relative url"), "{error}");
+    }
+}

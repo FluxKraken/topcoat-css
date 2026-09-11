@@ -30,7 +30,11 @@ pub(crate) fn compile(
         hash.update((part.len() as u64).to_le_bytes());
         hash.update(part.as_bytes());
     }
-    let hash = format!("{:x}", hash.finalize());
+    let hash: String = hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     let pattern =
         Pattern::parse(&format!("[local]_tc{}", &hash[..24])).map_err(|e| e.to_string())?;
     let mut sheet = StyleSheet::parse(
@@ -150,7 +154,13 @@ impl<'i> Visitor<'i> for Validate {
         let value = url.url.as_ref();
         // Generated CSS moves into Topcoat's bundle; source-relative resources
         // would resolve relative to that new URL, so reject them explicitly.
-        if !(value.starts_with('/') || value.starts_with('#') || value.contains(':')) {
+        let has_scheme = value.split_once(':').is_some_and(|(scheme, _)| {
+            scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        });
+        if !(value.starts_with('/') || value.starts_with('#') || has_scheme) {
             return Err(format!(
                 "relative url({value}) would break in the asset bundle; use a root-relative URL, absolute URL, or data URL"
             ));

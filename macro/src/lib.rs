@@ -2,7 +2,7 @@ use std::{env, fs};
 
 use proc_macro::{Span, TokenStream};
 use quote::quote;
-use topcoat_css_core::{fingerprint, Manifest, MANIFEST_ENV, MANIFEST_VERSION, STYLESHEET_ENV};
+use topcoat_css_core::{MANIFEST_ENV, MANIFEST_VERSION, Manifest, STYLESHEET_ENV, fingerprint};
 
 /// Return a const-compatible value with a static string field for each
 /// local CSS module export. Requires the `topcoat-css-build` build helper.
