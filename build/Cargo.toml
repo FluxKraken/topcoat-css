@@ -1,0 +1,20 @@
+[package]
+name = "topcoat-css-build"
+description = "Build-script compiler and stylesheet collection for topcoat-css"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+lightningcss = { version = "=1.0.0-alpha.72", default-features = false, features = [
+  "visitor",
+] }
+proc-macro2.workspace = true
+syn.workspace = true
+serde_json.workspace = true
+sha2 = "0.11.0"
+topcoat-css-core.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

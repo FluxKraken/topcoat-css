@@ -1,0 +1,11 @@
+[package]
+name = "topcoat-css-core"
+description = "Shared build manifest for topcoat-css (implementation detail)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+proc-macro2.workspace = true
+serde.workspace = true
