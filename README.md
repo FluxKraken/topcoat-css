@@ -37,7 +37,11 @@ registration, CSS injection, or component-level `<link>` is needed.
 
 ```toml
 [dependencies]
-topcoat = { version = "0.7", default-features = false, features = ["asset", "view", "router", "serve", "discover"] }
+topcoat = {
+  version = "0.7",
+  default-features = false,
+  features = ["asset", "view", "router", "serve", "discover"]
+}
 topcoat-css = "=0.1.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
