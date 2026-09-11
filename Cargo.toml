@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust_version = "1.88"
+licence = "MIT"
+
+[workspace.dependencies]
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
+quote = "1.0.47"
+syn = { version = "3.0.5", features = ["full"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+[package]
+name = "topcoat-css"
+description = "Local CSS modules & macro for Topcoat Web Framework"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
+
+[dependencies]
+topcoat-css-macro.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
