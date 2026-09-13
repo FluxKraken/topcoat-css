@@ -119,3 +119,89 @@ fn main() {
     assert!(!missing.status.success());
     assert!(String::from_utf8_lossy(&missing.stderr).contains("css! requires a build script"));
 }
+
+#[test]
+#[ignore = "requires rust-analyzer on PATH"]
+fn rust_analyzer_checks_fields_without_source_locations() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let project = tempfile::tempdir().unwrap();
+    let directory = project.path();
+    let target = root.join("target/editor-workflow-tests");
+    fs::create_dir(directory.join("src")).unwrap();
+    fs::write(
+        directory.join("Cargo.toml"),
+        format!(
+            r#"
+[package]
+name = "css-editor-fixture"
+version = "0.0.0"
+edition = "2024"
+[workspace]
+[dependencies]
+styles = {{ package = "topcoat-css", path = {root:?} }}
+[build-dependencies]
+topcoat-css-build = {{ path = {:?} }}
+"#,
+            root.join("build")
+        ),
+    )
+    .unwrap();
+    fs::write(
+        directory.join("build.rs"),
+        r#"
+fn main() {
+    topcoat_css_build::BuildConfig::new().macro_name("module_css").render().unwrap();
+}
+"#,
+    )
+    .unwrap();
+    let good = r##"
+use styles::css as module_css;
+const CARD: &str = module_css! { .card { color: red; } }.card;
+fn main() {
+    let style = module_css! { .card { color: red; } };
+    assert_ne!(CARD, style.card);
+    let literal = module_css!(r#".user-card, .type { color: red; }"#);
+    let _: &str = literal.user_card;
+    let _: &str = literal.r#type;
+    let _ = module_css! { :global(body) { color: red; } };
+}
+"##;
+    let source = directory.join("src/main.rs");
+    fs::write(&source, good).unwrap();
+    success(cargo(directory, &target));
+
+    let diagnostics = || {
+        Command::new("rust-analyzer")
+            .arg("diagnostics")
+            .arg(directory)
+            .args(["--severity", "error"])
+            .env("CARGO_TARGET_DIR", &target)
+            .env_remove("TOPCOAT_CSS_MANIFEST")
+            .env_remove("TOPCOAT_CSS_STYLESHEET")
+            .output()
+            .expect("run rust-analyzer")
+    };
+    let output = diagnostics();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The fallback must preserve field checking, not merely silence macro errors.
+    fs::write(&source, good.replace("style.card", "style.cadr")).unwrap();
+    let output = diagnostics();
+    let messages = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!output.status.success(), "{messages}");
+    assert!(
+        messages.contains("no field") && messages.contains("cadr"),
+        "{messages}"
+    );
+    assert!(!messages.contains("must appear directly"), "{messages}");
+}

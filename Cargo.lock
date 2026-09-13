@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "topcoat-css"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tempfile",
  "topcoat-css-macro",
@@ -604,7 +604,7 @@ dependencies = [
 
 [[package]]
 name = "topcoat-css-build"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "lightningcss",
  "proc-macro2",
@@ -617,7 +617,7 @@ dependencies = [
 
 [[package]]
 name = "topcoat-css-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proc-macro2",
  "serde",
@@ -625,12 +625,13 @@ dependencies = [
 
 [[package]]
 name = "topcoat-css-macro"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proc-macro2",
  "quote",
  "serde_json",
  "syn 3.0.5",
+ "tempfile",
  "topcoat-css-core",
 ]
 

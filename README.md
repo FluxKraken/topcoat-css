@@ -236,6 +236,23 @@ not try to reconstruct CSS using `TokenStream::to_string()` or best-effort
 `Span::source_text()`. Write CSS directly in scanned files; CSS produced by
 another macro or generated later in the build is unsupported.
 
+### Editor support
+
+`css!` supports field completion and type checking in rust-analyzer, including
+Neovim setups. When the editor's macro host omits source locations, the macro
+uses matching token contents in the build manifest to recover the exported
+field names. Identical bodies may share a field shape in the editor; normal
+compilation still verifies each invocation's location and uses its own scoped
+class names. Editor placeholders cannot be compiled into an application.
+
+Save CSS changes and let the build script rerun to refresh the manifest. If the
+editor reports that the manifest is out of date, run `cargo check` and reload
+the workspace if needed. If whitespace-sensitive token bodies match but export
+different field names, use string-literal CSS to distinguish those bodies.
+
+The rust-analyzer regression test requires `rust-analyzer` on `PATH` and can be
+run with `cargo test --test cargo_workflow rust_analyzer -- --ignored`.
+
 ## Initial limitations
 
 - **Collection is lexical.** It includes invocations in inactive `#[cfg]`
