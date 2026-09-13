@@ -17,8 +17,8 @@ quote = "1.0.47"
 syn = { version = "3.0.5", features = ["full"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-topcoat-css-core = { path = "core" }
-topcoat-css-macro = { path = "macro" }
+topcoat-css-core = { path = "core", version = "0.1.1" }
+topcoat-css-macro = { path = "macro", version = "0.1.1" }
 
 [package]
 name = "topcoat-css"
