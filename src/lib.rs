@@ -248,6 +248,9 @@
 //! `TOPCOAT_CSS_MANIFEST`, `TOPCOAT_CSS_STYLESHEET`, or a successful application build.
 //! Completions and field checking update on unsaved edits, and recover after empty
 //! or invalid CSS is corrected without restarting the language server.
+//! Editor hosts that omit source locations use the same input-based fallback, even
+//! when they select the ordinary macros. Missing or stale build manifests do not
+//! block that fallback.
 //!
 //! This also works while `topcoat dev` rebuilds the application. Saving incomplete
 //! CSS can still produce a real build-script error in Cargo, Clippy, or the dev
@@ -268,8 +271,9 @@
 //! cargo test --test editor_workflow -- --ignored
 //! ```
 //!
-//! The latter keeps one language server running through saved and unsaved edits
-//! with no build manifest. Set `RUST_ANALYZER` to select a particular binary.
+//! The latter tests saved and unsaved edits without restarting the language server,
+//! with both missing and stale build manifests. It covers the dedicated editor macros
+//! and the ordinary macros' fallback. Set `RUST_ANALYZER` to select a particular binary.
 //!
 //! ## Initial limitations
 //!

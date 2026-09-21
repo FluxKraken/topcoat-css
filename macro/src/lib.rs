@@ -27,6 +27,12 @@ fn error(span: Span, message: String) -> TokenStream {
 }
 
 fn expand_css(input: TokenStream, span: Span) -> Result<TokenStream, String> {
+    // Some editor hosts reach the ordinary proc macro rather than css_editor,
+    // and omit local source paths. Use the current input before consulting any
+    // build output: the manifest can be missing or stale throughout an edit.
+    let Some(file) = span.local_file() else {
+        return editor_expansion(input.into()).map(Into::into);
+    };
     if input.is_empty() {
         return Err("css! requires a CSS body or a string literal".into());
     }
@@ -41,9 +47,6 @@ fn expand_css(input: TokenStream, span: Span) -> Result<TokenStream, String> {
         return Err("incompatible CSS build manifest; use matching topcoat-css and topcoat-css-build versions".into());
     }
     let tokens = fingerprint(input.into());
-    let Some(file) = span.local_file() else {
-        return editor_expansion(&manifest, &tokens).map(Into::into);
-    };
     let file =
         fs::canonicalize(&file).map_err(|e| format!("cannot locate {}: {e}", file.display()))?;
     let module = manifest.modules.iter().find(|module| {
@@ -58,21 +61,10 @@ fn expand_css(input: TokenStream, span: Span) -> Result<TokenStream, String> {
     module_expansion(module, false).map(Into::into)
 }
 
-// Some proc-macro hosts (including rust-analyzer's legacy protocol) omit file
-// paths and line/column information. Token contents can recover the field shape,
-// but cannot identify scoped values: identical CSS in two calls has two hashes.
-fn editor_expansion(manifest: &Manifest, tokens: &str) -> Result<proc_macro2::TokenStream, String> {
-    let mut matches = manifest
-        .modules
-        .iter()
-        .filter(|module| module.fingerprint == tokens);
-    let module = matches.next().ok_or(
-        "css! editor analysis needs an up-to-date CSS build manifest; save the Rust source and run cargo check",
-    )?;
-    if matches.any(|other| !module.fields.keys().eq(other.fields.keys())) {
-        return Err("css! editor analysis cannot determine the exported fields without source locations: matching token contents have different exports; use string-literal CSS to distinguish whitespace-sensitive bodies".into());
-    }
-    module_expansion(module, true)
+// Both editor entrypoints derive fields from the current buffer and use guarded
+// placeholders. Neither generated CSS nor its manifest participates in analysis.
+fn editor_expansion(input: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, String> {
+    module_expansion(&editor::module(input)?, true)
 }
 
 fn module_expansion(module: &Module, editor: bool) -> Result<proc_macro2::TokenStream, String> {
@@ -119,8 +111,7 @@ fn editor_guard() -> proc_macro2::TokenStream {
 #[doc(hidden)]
 #[proc_macro]
 pub fn css_editor(input: TokenStream) -> TokenStream {
-    editor::module(input.into())
-        .and_then(|module| module_expansion(&module, true))
+    editor_expansion(input.into())
         .map(Into::into)
         .unwrap_or_else(|message| error(Span::call_site(), message))
 }
@@ -150,6 +141,9 @@ pub fn stylesheet_editor(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn stylesheet(input: TokenStream) -> TokenStream {
     let span = Span::call_site();
+    if span.local_file().is_none() {
+        return stylesheet_editor(input);
+    }
     let topcoat: syn::Path = if input.is_empty() {
         syn::parse_quote!(::topcoat)
     } else {
@@ -191,25 +185,25 @@ mod tests {
     }
 
     #[test]
-    fn editor_requires_matching_tokens_and_unambiguous_field_names() {
-        let mut manifest = Manifest {
-            version: MANIFEST_VERSION,
-            modules: vec![module(&[("card", "card_tc_first")])],
-        };
+    fn editor_expansion_uses_current_input_and_guards_placeholder_values() {
+        for input in [
+            quote!(.new-card { color: blue; }),
+            quote!(".new-card { color: blue; }"),
+        ] {
+            let expansion = editor_expansion(input).unwrap().to_string();
+            assert!(expansion.contains("pub new_card"), "{expansion}");
+            assert!(expansion.contains("new_card : \"\""), "{expansion}");
+            assert!(
+                expansion.contains("editor placeholders cannot be compiled"),
+                "{expansion}"
+            );
+            assert!(!expansion.contains("TOPCOAT_CSS_MANIFEST"), "{expansion}");
+        }
+        assert!(editor_expansion(quote!()).is_ok());
         assert!(
-            editor_expansion(&manifest, "unsaved edit")
+            editor_expansion(quote!(.card { color red; }))
                 .unwrap_err()
-                .contains("save the Rust source")
-        );
-        manifest.modules.push(module(&[("card", "card_tc_second")]));
-        assert!(editor_expansion(&manifest, "same tokens").is_ok());
-        manifest
-            .modules
-            .push(module(&[("card_title", "card_title_tc_third")]));
-        assert!(
-            editor_expansion(&manifest, "same tokens")
-                .unwrap_err()
-                .contains("different exports")
+                .contains("invalid CSS")
         );
     }
 

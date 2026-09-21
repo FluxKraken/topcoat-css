@@ -1,4 +1,4 @@
-//! Keep one language server alive while editing without any CSS build output.
+//! Keep one language server alive while editing with missing or stale build output.
 use std::{
     fs,
     io::{BufRead, BufReader, Read, Write},
@@ -163,6 +163,16 @@ impl Analyzer {
 #[test]
 #[ignore = "requires rust-analyzer on PATH (or RUST_ANALYZER)"]
 fn rust_analyzer_edits_without_build_environment_or_restarts() {
+    check_live_edits(false);
+}
+
+#[test]
+#[ignore = "requires rust-analyzer on PATH (or RUST_ANALYZER)"]
+fn rust_analyzer_edits_with_stale_manifest_without_restarts() {
+    check_live_edits(true);
+}
+
+fn check_live_edits(stale_manifest: bool) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let project = tempfile::tempdir().unwrap();
     // Canonicalize for macOS's /var -> /private/var symlink and file URI matching.
@@ -179,11 +189,31 @@ edition = "2024"
 [workspace]
 [dependencies]
 styles = {{ package = "topcoat-css", path = {root:?} }}
-"#
+direct_styles = {{ package = "topcoat-css-macro", path = {:?} }}
+"#,
+            root.join("macro")
         ),
     )
     .unwrap();
-    // No build helper or manifest: completion must not depend on their availability.
+    if stale_manifest {
+        // Model build output from before any CSS was added. Rebuilding this
+        // fixture leaves the editor with a valid but outdated manifest.
+        fs::write(
+            directory.join("editor-manifest.json"),
+            r#"{"version":1,"modules":[]}"#,
+        )
+        .unwrap();
+        fs::write(
+            directory.join("build.rs"),
+            r#"
+fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rustc-env=TOPCOAT_CSS_MANIFEST={}/editor-manifest.json", env!("CARGO_MANIFEST_DIR"));
+}
+"#,
+        )
+        .unwrap();
+    }
     let source = |css: &str| {
         format!(
             r#"
@@ -193,7 +223,12 @@ macro_rules! asset {{ ($path:expr) => {{ $path }}; }}
 pub mod asset {{ pub use crate::asset; }}
 const SHEET: &str = styles::stylesheet!();
 const RENAMED_SHEET: &str = styles::stylesheet!(crate);
-fn main() {{ let _ = styles::css! {{ {css} }}; }}
+const DIRECT_SHEET: &str = direct_styles::stylesheet!();
+const DIRECT_RENAMED_SHEET: &str = direct_styles::stylesheet!(crate);
+fn main() {{
+    let _ = styles::css! {{ {css} }};
+    let _ = direct_styles::css! {{ {css} }};
+}}
 "#
         )
     };
@@ -210,7 +245,12 @@ fn main() {{ let _ = styles::css! {{ {css} }}; }}
         }}),
     );
 
-    for name in ["stylesheet!()", "stylesheet!(crate)"] {
+    for name in [
+        "styles::stylesheet!()",
+        "styles::stylesheet!(crate)",
+        "direct_styles::stylesheet!()",
+        "direct_styles::stylesheet!(crate)",
+    ] {
         let expansion = analyzer.expand(&uri, &initial, name);
         assert!(!expansion.contains("compile_error"), "{expansion}");
         assert!(!expansion.contains("TOPCOAT_CSS"), "{expansion}");
@@ -242,17 +282,31 @@ fn main() {{ let _ = styles::css! {{ {css} }}; }}
                 json!({"textDocument": {"uri": uri}}),
             );
         }
-        let expansion = analyzer.expand(&uri, &text, "css!");
-        assert!(!expansion.contains("TOPCOAT_CSS_MANIFEST"), "{expansion}");
-        assert!(
-            !expansion.contains("requires a build script"),
-            "{expansion}"
-        );
-        if expected == "invalid CSS" {
-            assert!(expansion.contains(expected), "{expansion}");
-        } else {
-            assert!(!expansion.contains("compile_error"), "{expansion}");
-            assert!(expansion.contains(expected), "{expansion}");
+        // The direct dependency bypasses the facade's cfg(rust_analyzer) reexport.
+        // Both entrypoints must recover without consulting missing or stale output.
+        for name in ["styles::css!", "direct_styles::css!"] {
+            let expansion = analyzer.expand(&uri, &text, name);
+            assert!(
+                !expansion.contains("TOPCOAT_CSS_MANIFEST"),
+                "{name}: {expansion}"
+            );
+            assert!(
+                !expansion.contains("CSS build manifest"),
+                "{name}: {expansion}"
+            );
+            assert!(
+                !expansion.contains("requires a build script"),
+                "{name}: {expansion}"
+            );
+            if expected == "invalid CSS" {
+                assert!(expansion.contains(expected), "{name}: {expansion}");
+            } else {
+                assert!(!expansion.contains("compile_error"), "{name}: {expansion}");
+                assert!(expansion.contains(expected), "{name}: {expansion}");
+                if expected.is_empty() {
+                    assert!(!expansion.contains("pub card"), "{name}: {expansion}");
+                }
+            }
         }
     }
 }
