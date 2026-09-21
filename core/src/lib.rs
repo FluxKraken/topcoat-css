@@ -1,5 +1,8 @@
 //! Internal protocol shared by the build helper and procedural macros.
 
+#[cfg(feature = "compiler")]
+pub mod compiler;
+
 use std::collections::BTreeMap;
 
 use proc_macro2::{TokenStream, TokenTree};

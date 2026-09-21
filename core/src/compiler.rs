@@ -8,12 +8,12 @@ use lightningcss::{
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(crate) struct Compiled {
+pub struct Compiled {
     pub css: String,
     pub fields: BTreeMap<String, String>,
 }
 
-pub(crate) fn compile(
+pub fn compile(
     css: &str,
     namespace: &str,
     file: &str,

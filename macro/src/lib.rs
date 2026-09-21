@@ -1,5 +1,7 @@
 use std::{env, fs};
 
+mod editor;
+
 use proc_macro::{Span, TokenStream};
 use quote::quote;
 use topcoat_css_core::{
@@ -88,13 +90,16 @@ fn module_expansion(module: &Module, editor: bool) -> Result<proc_macro2::TokenS
     // Keep field completion/type checking available without inventing scoped
     // values. This fallback must never produce a runnable build, even if a
     // compiler (rather than an editor) supplies a span without a local file.
-    let guard = editor.then(|| quote! {
-        const _: () = ::core::panic!("css! requires source-file locations during compilation; write CSS directly in a scanned Rust source file");
+    let guard = editor.then(editor_guard);
+    let manifest_dependency = (!editor).then(|| {
+        quote! {
+            const _: &str = include_str!(env!("TOPCOAT_CSS_MANIFEST"));
+        }
     });
     Ok(quote! {{
         #guard
         // Track the artifact read during expansion for Cargo/rustc incremental builds.
-        const _: &str = include_str!(env!("TOPCOAT_CSS_MANIFEST"));
+        #manifest_dependency
         #[allow(dead_code, non_snake_case)]
         #[derive(Clone, Copy, Debug)]
         struct __TopcoatCssModule {
@@ -102,6 +107,42 @@ fn module_expansion(module: &Module, editor: bool) -> Result<proc_macro2::TokenS
         }
         __TopcoatCssModule { #(#fields: #values,)* }
     }})
+}
+
+fn editor_guard() -> proc_macro2::TokenStream {
+    quote! {
+        const _: () = ::core::panic!("topcoat-css editor placeholders cannot be compiled; build without --cfg rust_analyzer and call BuildConfig::render() in build.rs");
+    }
+}
+
+/// Internal expansion selected by topcoat-css under `cfg(rust_analyzer)`.
+#[doc(hidden)]
+#[proc_macro]
+pub fn css_editor(input: TokenStream) -> TokenStream {
+    editor::module(input.into())
+        .and_then(|module| module_expansion(&module, true))
+        .map(Into::into)
+        .unwrap_or_else(|message| error(Span::call_site(), message))
+}
+
+/// Internal asset type placeholder; never depends on build-script output.
+#[doc(hidden)]
+#[proc_macro]
+pub fn stylesheet_editor(input: TokenStream) -> TokenStream {
+    let topcoat: syn::Path = if input.is_empty() {
+        syn::parse_quote!(::topcoat)
+    } else {
+        match syn::parse(input) {
+            Ok(path) => path,
+            Err(e) => return e.to_compile_error().into(),
+        }
+    };
+    let guard = editor_guard();
+    quote! {{
+        #guard
+        #topcoat::asset::asset!("__topcoat_css_editor.css")
+    }}
+    .into()
 }
 
 /// Declare the generated stylesheet as a Topcoat asset. Link once in the layout.
@@ -203,7 +244,7 @@ mod tests {
                 assert_eq!(output.status.success(), !editor, "{stderr}");
                 if editor {
                     assert!(
-                        stderr.contains("css! requires source-file locations during compilation"),
+                        stderr.contains("topcoat-css editor placeholders cannot be compiled"),
                         "{stderr}"
                     );
                 }

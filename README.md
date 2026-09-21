@@ -3,7 +3,7 @@
 Write CSS beside a Topcoat component, refer to classes through checked Rust
 fields, and load one stylesheet from your layout.
 
-```rust
+```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
 use topcoat::{Result, view::{View, component, view}};
 use topcoat_css::css;
 
@@ -35,18 +35,18 @@ registration, CSS injection, or component-level `<link>` is needed.
 
 ## Add to an application
 
+These examples are parts of a Cargo application with its own `build.rs`.
+They are compiled together by `tests/doc_examples.rs`; standalone rustdoc
+execution is disabled because it cannot provide that build-script context.
+
 ```toml
 [dependencies]
-topcoat = {
-  version = "0.7",
-  default-features = false,
-  features = ["asset", "view", "router", "serve", "discover"]
-}
-topcoat-css = "=0.1.0"
+topcoat = { version = "0.7", default-features = false, features = ["asset", "view", "router", "serve", "discover"] }
+topcoat-css = "=0.1.2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [build-dependencies]
-topcoat-css-build = "=0.1.0"
+topcoat-css-build = "=0.1.2"
 ```
 
 Keep `topcoat-css` and `topcoat-css-build` on matching versions. The example
@@ -55,13 +55,13 @@ setup explicitly enables Topcoat's `asset`, `view`, `router`, `serve`, and
 `discover` is needed for `.discover()` below. Applications that register routes
 explicitly can omit it. Using `css!` alone does not require a Topcoat dependency.
 
-Until version 0.1.0 is published, use local paths for the two CSS dependencies:
+To use a local checkout, replace the two CSS dependencies with paths:
 `topcoat-css = { path = "../topcoat_css_package" }` and
 `topcoat-css-build = { path = "../topcoat_css_package/build" }`.
 
 Create or extend `build.rs`:
 
-```rust
+```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
 fn main() {
     topcoat_css_build::BuildConfig::new().render().unwrap();
 }
@@ -69,7 +69,7 @@ fn main() {
 
 Link the generated asset **once in your root layout**:
 
-```rust
+```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
 use topcoat::{
     Result,
     router::{Slot, layout},
@@ -92,7 +92,7 @@ async fn root_layout(slot: Slot<'_>) -> Result<impl View> {
 
 Register the asset bundle on your router, **including when using `topcoat dev`**:
 
-```rust
+```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
 use topcoat::{
     asset::{AssetBundle, RouterBuilderAssetExt},
     router::{Router, RouterBuilderDiscoverExt},
@@ -135,7 +135,9 @@ to parse and scope actual CSS. Classes, IDs, keyframes, and other supported CSS
 module identifiers, including grid and container names, are scoped consistently. Custom properties
 such as `--foreground` remain unchanged.
 
-```rust
+```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
+use topcoat_css::css;
+
 let style = css! {
     :global(.dark-theme) .card { color: var(--foreground); }
     .card { animation: fade-in 200ms ease; }
@@ -174,7 +176,9 @@ strings and `/* CSS comments */` in token bodies. CSS containing single-quoted
 strings, backslash escapes, or URLs that Rust cannot tokenize belongs in
 a **Rust string literal**:
 
-```rust
+```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
+use topcoat_css::css;
+
 let style = css!(r#"
     .card::before { content: 'Hello'; }
     .card { background-image: url('https://example.com/photo.png'); }
@@ -195,7 +199,7 @@ checkout paths or line numbers. Formatting a CSS body changes its hash.
 Adding or removing an earlier invocation in the same file also changes the
 hashes of later invocations. File order determines the cascade for global rules.
 
-```rust
+```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
 fn main() {
     topcoat_css_build::BuildConfig::new()
         .source("components") // Additional source directory or individual .rs file.
@@ -224,34 +228,48 @@ add a compatibility pass, or merge and reorder rules across modules.
 
 The helper watches source directories, including additions and deletions, and
 rewrites the combined stylesheet from scratch when needed. Unchanged output
-files are left untouched. Procedural macros only read the build manifest; they
-never write stylesheets or append to global files. Macro expansions track the
-generated manifest and stylesheet with `include_str!` so Rust observes
-artifact changes.
+files are left untouched. During compilation, procedural macros only read the
+build manifest; they never write stylesheets or append to global files. Macro
+expansions track the generated manifest and stylesheet with `include_str!` so
+Rust observes artifact changes.
 
 Collection happens before Rust macro expansion. The scanner reads original
 source text and records each invocation's location and token contents. `css!`
-uses stable source-location APIs to select and verify its build record; it does
-not try to reconstruct CSS using `TokenStream::to_string()` or best-effort
-`Span::source_text()`. Write CSS directly in scanned files; CSS produced by
+uses stable source-location APIs to select and verify its build record during
+compilation; it does not reconstruct CSS using `TokenStream::to_string()` or
+best-effort `Span::source_text()`. Write CSS directly in scanned files; CSS produced by
 another macro or generated later in the build is unsupported.
 
 ### Editor support
 
-`css!` supports field completion and type checking in rust-analyzer, including
-Neovim setups. When the editor's macro host omits source locations, the macro
-uses matching token contents in the build manifest to recover the exported
-field names. Identical bodies may share a field shape in the editor; normal
-compilation still verifies each invocation's location and uses its own scoped
-class names. Editor placeholders cannot be compiled into an application.
+`css!` and `stylesheet!` have dedicated expansions for rust-analyzer, including
+Neovim and Zed. The editor derives CSS fields from the current macro input using
+the same CSS compiler and field-name rules as the build helper. It does not need
+`TOPCOAT_CSS_MANIFEST`, `TOPCOAT_CSS_STYLESHEET`, or a successful application build.
+Completions and field checking update on unsaved edits, and recover after empty
+or invalid CSS is corrected without restarting the language server.
 
-Save CSS changes and let the build script rerun to refresh the manifest. If the
-editor reports that the manifest is out of date, run `cargo check` and reload
-the workspace if needed. If whitespace-sensitive token bodies match but export
-different field names, use string-literal CSS to distinguish those bodies.
+This also works while `topcoat dev` rebuilds the application. Saving incomplete
+CSS can still produce a real build-script error in Cargo, Clippy, or the dev
+server; fix the CSS and save again. Editor analysis remains independent of those
+build results. Keep rust-analyzer's proc-macro support enabled.
 
-The rust-analyzer regression test requires `rust-analyzer` on `PATH` and can be
-run with `cargo test --test cargo_workflow rust_analyzer -- --ignored`.
+Editor expansions provide types only. Their placeholder values are guarded so
+they cannot compile into an application, even if `--cfg rust_analyzer` is passed
+to rustc. Normal builds still require `BuildConfig::render()`, verify source
+locations, and use the exact source text to generate scoped CSS. Without source
+locations, token-body whitespace is approximated for editor field discovery;
+use string-literal CSS if whitespace changes which names are exported.
+
+Editor regression tests require `rust-analyzer` on `PATH`:
+
+```sh
+cargo test --test cargo_workflow rust_analyzer -- --ignored
+cargo test --test editor_workflow -- --ignored
+```
+
+The latter keeps one language server running through saved and unsaved edits
+with no build manifest. Set `RUST_ANALYZER` to select a particular binary.
 
 ## Initial limitations
 

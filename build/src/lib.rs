@@ -7,7 +7,6 @@
 //! }
 //! ```
 
-mod compiler;
 mod scanner;
 
 use std::{
@@ -15,6 +14,7 @@ use std::{
     env, fmt, fs,
     path::{Path, PathBuf},
 };
+use topcoat_css_core::compiler;
 use topcoat_css_core::{MANIFEST_ENV, MANIFEST_VERSION, Manifest, Module, STYLESHEET_ENV};
 
 /// A source, CSS, configuration, or filesystem error with human-readable context.
