@@ -226,6 +226,8 @@ const RENAMED_SHEET: &str = styles::stylesheet!(crate);
 const DIRECT_SHEET: &str = direct_styles::stylesheet!();
 const DIRECT_RENAMED_SHEET: &str = direct_styles::stylesheet!(crate);
 fn main() {{
+    let color = "red";
+    let width = 1;
     let _ = styles::css! {{ {css} }};
     let _ = direct_styles::css! {{ {css} }};
 }}
@@ -261,6 +263,10 @@ fn main() {{
         (".card { color red; }", "invalid CSS"),
         (".new-card { color: blue; }", "new_card"),
         (r#"".literal, .type { color: green; }""#, "r#type"),
+        (
+            ".header { color: $(color); width: calc($(width) * 1px); }",
+            "header",
+        ),
         (".last { display: grid; }", "last"),
     ]
     .into_iter()

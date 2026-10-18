@@ -167,9 +167,9 @@ let style = css! {
   transitive compositions.
 - IDs and animation names also appear in the export object. Use an ID export
   with `id=(style.some_id)`, not with `class`.
-- The generated value implements `Copy`, `Clone`, and `Debug`, and can be used
-  in const expressions. It contains only CSS exports; there is no automatically
-  added stylesheet handle. Use `stylesheet!()` for the application stylesheet.
+- Without interpolation, the generated value implements `Copy`, `Clone`, and
+  `Debug`, and can be used in const expressions. There is no automatically added
+  stylesheet handle. Use `stylesheet!()` for the application stylesheet.
 
 Bare CSS must also be accepted by Rust's tokenizer. Use double-quoted CSS
 strings and `/* CSS comments */` in token bodies. CSS containing single-quoted
@@ -189,13 +189,75 @@ The string form has the same scoping and field access. Whitespace-sensitive
 selectors are preserved in both forms; `.card :hover` and `.card:hover` remain
 different selectors. Rust `//` comments are not CSS comments.
 
+## Runtime values
+
+Use `$(expression)` in token-body declaration values to capture Rust values:
+
+```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
+use topcoat::{Result, view::{View, component, view}};
+use topcoat_css::css;
+
+#[component]
+async fn header(bg: &str, fg: &str) -> Result<impl View> {
+    let colors = css! {
+        .header {
+            --header-bg: $(bg);
+            --header-fg: $(fg);
+            background: var(--header-bg);
+            color: var(--header-fg);
+        }
+    };
+
+    Ok(view! {
+        <header class=(colors.header) style=(colors.style())>
+            "Header"
+        </header>
+    })
+}
+```
+
+The stylesheet stays static: each expression becomes a reference to a generated,
+module-specific CSS variable. `colors.style()` returns the inline declarations
+that supply those variables. Apply it to the styled element or a common ancestor
+of elements using the module. CSS variables inherit into descendants, so separate
+instances of the same component can use different values with the same classes.
+Without the style attribute, the generated variables have no supplied values.
+
+Expressions must implement `Display`. They are evaluated and formatted once, in
+source order, when `css!` executes; the module owns the resulting strings and does
+not retain references to the inputs. Calling `.style()` borrows the stored text
+without evaluating expressions again. Interpolated modules implement `Clone` and
+`Debug`, but are neither `Copy` nor const-compatible. Their exported class fields
+remain `&'static str`. Modules without interpolation also have an empty `.style()`.
+
+Interpolation works in custom properties and ordinary declaration values,
+including values inside CSS functions, nested rules, media rules, and keyframes.
+It follows CSS `var(...)` semantics: use `$(format!("{width}px"))` or
+`calc($(width) * 1px)` for a length, rather than `$(width)px`. Runtime identifiers
+are not automatically scoped; pass an exported name when referencing a local
+keyframe or other CSS module identifier.
+
+Selectors, property names, at-rule conditions, and the contents of CSS strings
+or `url(...)` cannot be interpolated. For a dynamic URL, interpolate a complete
+CSS value such as `$(format!("url(\"{url}\")"))`. Interpolation is not performed in
+the string-literal form of `css!` or inside quoted CSS strings and comments.
+
+Values are CSS text, not automatically quoted CSS strings. Supply CSS quotes
+when a property such as `content` requires them. Runtime token serialization keeps
+each value inside its generated declaration; malformed tokens, top-level
+semicolons, and `!important` cause a panic at the `css!` call. Put `!important`
+after the interpolation in the CSS declaration if needed. Property-specific
+value validity remains the browser's responsibility. Normal HTML attribute
+escaping is handled by the view renderer.
+
 ## Collection and rebuilds
 
 `BuildConfig` recursively scans `src/**/*.rs` by default. Files are combined in
 sorted path order, with invocations in source order. Overlapping source roots do
 not duplicate files. Scoped hashes include the package namespace, relative
 source path, invocation index, and CSS text; they do not include absolute
-checkout paths or line numbers. Formatting a CSS body changes its hash.
+checkout paths or line numbers. Formatting CSS outside interpolation expressions
+changes its hash.
 Adding or removing an earlier invocation in the same file also changes the
 hashes of later invocations. File order determines the cascade for global rules.
 
@@ -284,8 +346,9 @@ and the ordinary macros' fallback. Set `RUST_ANALYZER` to select a particular bi
 - **One package per bundle.** Dependency crates are not scanned automatically.
   Each reusable component crate can build its own stylesheet and expose an asset
   for the application to link separately.
-- **Static CSS only.** Rust value interpolation and cross-file `composes` are
-  unsupported. Use CSS variables for values that change at runtime.
+- **Runtime values use CSS variables.** Interpolation requires applying
+  `.style()` to the relevant element or ancestor. Selectors and at-rule conditions
+  remain static. Cross-file `composes` is unsupported.
 - **Resource paths are explicit.** Relative `url(images/photo.png)` is rejected
   because moving CSS into the asset bundle would change its meaning.
   Use root-relative, absolute, data, or fragment URLs. This library does not copy,

@@ -76,6 +76,68 @@ fn main() {
     assert!(initial.contains("card_tc"));
     assert!(initial.contains("color: red"));
 
+    // The same invocation can render independent values without changing its
+    // classes or mutating the stylesheet. Also exercise a renamed dependency.
+    let dynamic = r#"
+use styles::css as module_css;
+const STATIC: &str = module_css! { .plain { display: block; } }.plain;
+fn header(bg: String, fg: &str) -> (&'static str, String) {
+    let mut evaluations = 0;
+    let colors = module_css! {
+        .header {
+            --header-bg: $({ evaluations += 1; bg.as_str() });
+            --header-fg: $(fg);
+            padding: $(format!("{}px", 16));
+            margin: calc($(2) * 1px);
+        }
+        .header_text { color: var(--header-fg); }
+        .style { color: red; }
+        .__topcoat_css_style { color: blue; }
+    };
+    assert_eq!(evaluations, 1);
+    assert!(bg.starts_with("hsl(")); // Interpolation borrows rather than moving bg.
+    let _: &str = colors.header_text;
+    let _: &str = colors.style;
+    let _: &str = colors.__topcoat_css_style;
+    assert_eq!(colors.clone().style(), colors.style());
+    (colors.header, colors.style().to_owned())
+}
+fn main() {
+    let (first_class, first_style) = header("hsl(200 100% 50%)".to_owned(), "white");
+    let (second_class, second_style) = header("hsl(60 80% 80%)".to_owned(), "black");
+    assert_eq!(first_class, second_class);
+    assert_ne!(first_style, second_style);
+    let css = include_str!(env!("TOPCOAT_CSS_STYLESHEET"));
+    for inline in [&first_style, &second_style] {
+        for declaration in inline.split(';').filter(|s| !s.is_empty()) {
+            let (name, _) = declaration.split_once(':').unwrap();
+            assert!(css.contains(&format!("var({name})")), "{}", css);
+        }
+    }
+    assert!(first_style.contains(":white;"));
+    assert!(second_style.contains(":black;"));
+    assert!(first_style.contains(":16px;"));
+    assert!(first_style.contains(":2;"));
+    assert!(STATIC.starts_with("plain_tc"));
+    println!("{}", first_class);
+    println!("{}", first_style);
+    println!("{}", second_style);
+}
+"#;
+    fs::write(&source, dynamic).unwrap();
+    let interpolated = success(cargo(directory, &target));
+    assert!(interpolated.contains("hsl(200 100% 50%)"));
+    assert!(interpolated.contains("hsl(60 80% 80%)"));
+
+    fs::write(&source, dynamic.replace("$(fg)", "$(missing_color)")).unwrap();
+    let undefined = cargo(directory, &target);
+    assert!(!undefined.status.success());
+    assert!(
+        String::from_utf8_lossy(&undefined.stderr).contains("cannot find value `missing_color`")
+    );
+
+    fs::write(&source, good).unwrap();
+
     // The new source is intentionally not declared with `mod`: collection is lexical.
     fs::write(
         directory.join("src/added.rs"),

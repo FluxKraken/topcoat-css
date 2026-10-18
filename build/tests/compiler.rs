@@ -266,3 +266,56 @@ fn resource_urls_require_a_root_fragment_or_valid_scheme() {
         assert!(error.contains("relative url"), "{error}");
     }
 }
+
+#[test]
+fn interpolations_use_unique_variables_in_declaration_values() {
+    let source = r#"
+        fn example() {
+            css! {
+                .card :hover { --bg: $(bg.as_str()); color: $(fg); }
+                @media (width < 800px) {
+                    .card { width: calc($(width) * 1px); }
+                }
+                @keyframes fade { to { opacity: $(opacity); } }
+            };
+            css! { .card { --bg: $(bg.as_str()); } };
+        }
+    "#;
+    let project = Project::new(source);
+    let (css, manifest) = project.build();
+    let first = &manifest.modules[0];
+    assert_eq!(first.variables.len(), 4);
+    assert_eq!(manifest.modules[1].variables.len(), 1);
+    assert!(!first.variables.contains(&manifest.modules[1].variables[0]));
+    for variable in first.variables.iter().chain(&manifest.modules[1].variables) {
+        assert!(css.contains(&format!("var({variable})")), "{css}");
+    }
+    assert!(css.contains(&format!(".{} :hover", first.fields["card"])));
+    assert!(!css.contains("$("));
+    assert!(!css.contains("--topcoat-css-interpolation-"));
+    let minified = read(project.config().minify(true).compile().unwrap());
+    assert_eq!(first.variables, minified.1.modules[0].variables);
+    assert_eq!(css, Project::new(source).build().0);
+}
+
+#[test]
+fn rejects_interpolation_outside_supported_values() {
+    for body in [
+        "$(selector) { color: red; }",
+        ".card { $(property): red; }",
+        "@media (width > $(width)) { .card { color: red; } }",
+        "@supports (color: $(color)) { .card { color: red; } }",
+        ".card { background: url($(url)); }",
+    ] {
+        let error = Project::new(&format!("fn main() {{ css! {{ {body} }}; }}"))
+            .config()
+            .compile()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("main.rs"), "{error}");
+        assert!(
+            error.contains("invalid CSS") || error.contains("interpolation"),
+            "{error}"
+        );
+    }
+}

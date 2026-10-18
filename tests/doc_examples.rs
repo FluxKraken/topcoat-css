@@ -37,6 +37,7 @@ fn documented_application_compiles_with_both_build_scripts() {
         main,
         syntax,
         literal,
+        interpolation,
         advanced_build,
     ] = snippets.as_slice()
     else {
@@ -74,6 +75,7 @@ fn documented_application_compiles_with_both_build_scripts() {
     .unwrap();
     fs::write(directory.join("src/component.rs"), component).unwrap();
     fs::write(directory.join("src/layout.rs"), layout).unwrap();
+    fs::write(directory.join("src/interpolation.rs"), interpolation).unwrap();
     // These two snippets are function bodies. Include checks of the documented exports.
     fs::write(
         directory.join("src/syntax.rs"),
@@ -88,7 +90,7 @@ fn documented_application_compiles_with_both_build_scripts() {
     fs::write(
         directory.join("src/main.rs"),
         format!(
-            "#![allow(dead_code)]\nmod component;\nmod layout;\nmod syntax;\nmod literal;\n{main}\n"
+            "#![allow(dead_code)]\nmod component;\nmod layout;\nmod syntax;\nmod literal;\nmod interpolation;\n{main}\n"
         ),
     )
     .unwrap();

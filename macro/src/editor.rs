@@ -3,18 +3,22 @@
 //! still reads the original source to preserve whitespace and generate real CSS.
 
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
-use topcoat_css_core::{Module, compiler};
+use topcoat_css_core::{Module, compiler, interpolation};
 
 pub(crate) fn module(input: TokenStream) -> Result<Module, String> {
-    let css = match syn::parse2::<syn::LitStr>(input.clone()) {
-        Ok(literal) => literal.value(),
-        Err(_) => css_tokens(input),
+    let (css, count) = match syn::parse2::<syn::LitStr>(input.clone()) {
+        Ok(literal) => (literal.value(), 0),
+        Err(_) => {
+            let (tokens, expressions) = interpolation::extract(input)?;
+            (css_tokens(tokens), expressions.len())
+        }
     };
     // An empty body is common while typing. Cargo continues to reject it.
-    let fields = if css.trim().is_empty() {
+    let (fields, variables) = if css.trim().is_empty() {
         Default::default()
     } else {
-        compiler::compile(&css, "editor", "editor.rs", 0, false)?.fields
+        let compiled = compiler::compile_template(&css, "editor", "editor.rs", 0, false, count)?;
+        (compiled.fields, compiled.variables)
     };
     Ok(Module {
         file: String::new(),
@@ -22,6 +26,7 @@ pub(crate) fn module(input: TokenStream) -> Result<Module, String> {
         column: 0,
         fingerprint: String::new(),
         fields,
+        variables,
     })
 }
 

@@ -1,5 +1,7 @@
 use lightningcss::{
     css_modules::{Config, CssModuleExports, CssModuleReference, Pattern},
+    declaration::DeclarationBlock,
+    properties::custom::Variable,
     rules::CssRule,
     stylesheet::{ParserOptions, PrinterOptions, StyleSheet},
     values::url::Url,
@@ -11,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Compiled {
     pub css: String,
     pub fields: BTreeMap<String, String>,
+    pub variables: Vec<String>,
 }
 
 pub fn compile(
@@ -19,6 +22,18 @@ pub fn compile(
     file: &str,
     index: usize,
     minify: bool,
+) -> Result<Compiled, String> {
+    compile_template(css, namespace, file, index, minify, 0)
+}
+
+/// Compile a template whose `$(...)` expressions have been replaced by placeholders.
+pub fn compile_template(
+    css: &str,
+    namespace: &str,
+    file: &str,
+    index: usize,
+    minify: bool,
+    interpolations: usize,
 ) -> Result<Compiled, String> {
     if css.trim().is_empty() {
         return Err("css! requires a nonempty stylesheet".into());
@@ -53,6 +68,20 @@ pub fn compile(
     sheet
         .visit(&mut Validate)
         .map_err(|e| format!("unsupported CSS: {e}"))?;
+    let variables: Vec<_> = (0..interpolations)
+        .map(|index| format!("--tc{}-{index}", &hash[..24]))
+        .collect();
+    if interpolations > 0 {
+        let mut visitor = Interpolate {
+            variables: &variables,
+            seen: vec![0; interpolations],
+            in_declaration: false,
+        };
+        sheet.visit(&mut visitor)?;
+        if visitor.seen.iter().any(|count| *count != 1) {
+            return Err("CSS interpolation is supported only in declaration values where var(...) is allowed; selectors, property names, at-rule conditions, strings, and url(...) contents cannot be interpolated".into());
+        }
+    }
     let result = sheet
         .to_css(PrinterOptions {
             minify,
@@ -76,7 +105,44 @@ pub fn compile(
     Ok(Compiled {
         css: result.code,
         fields,
+        variables,
     })
+}
+
+struct Interpolate<'a> {
+    variables: &'a [String],
+    seen: Vec<usize>,
+    in_declaration: bool,
+}
+
+impl<'i> Visitor<'i> for Interpolate<'_> {
+    type Error = String;
+
+    fn visit_types(&self) -> VisitTypes {
+        VisitTypes::PROPERTIES | VisitTypes::VARIABLES
+    }
+
+    fn visit_declaration_block(&mut self, block: &mut DeclarationBlock<'i>) -> Result<(), String> {
+        let previous = self.in_declaration;
+        self.in_declaration = true;
+        let result = block.visit_children(self);
+        self.in_declaration = previous;
+        result
+    }
+
+    fn visit_variable(&mut self, variable: &mut Variable<'i>) -> Result<(), String> {
+        for (index, name) in self.variables.iter().enumerate() {
+            if variable.name.ident.0.as_ref() == crate::interpolation::placeholder(index) {
+                if !self.in_declaration {
+                    return Err("CSS interpolation is supported only in declaration values, not at-rule conditions".into());
+                }
+                self.seen[index] += 1;
+                variable.name.ident.0 = name.clone().into();
+                break;
+            }
+        }
+        variable.visit_children(self)
+    }
 }
 
 fn field_name(name: &str) -> Result<String, String> {

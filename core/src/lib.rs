@@ -3,12 +3,15 @@
 #[cfg(feature = "compiler")]
 pub mod compiler;
 
+#[cfg(feature = "compiler")]
+pub mod interpolation;
+
 use std::collections::BTreeMap;
 
 use proc_macro2::{TokenStream, TokenTree};
 use serde::{Deserialize, Serialize};
 
-pub const MANIFEST_VERSION: u32 = 1;
+pub const MANIFEST_VERSION: u32 = 2;
 pub const MANIFEST_ENV: &str = "TOPCOAT_CSS_MANIFEST";
 pub const STYLESHEET_ENV: &str = "TOPCOAT_CSS_STYLESHEET";
 
@@ -28,6 +31,9 @@ pub struct Module {
     pub fingerprint: String,
     /// Valid Rust field names (including raw identifiers) to scoped CSS names.
     pub fields: BTreeMap<String, String>,
+    /// Generated custom properties, in Rust interpolation source order.
+    #[serde(default)]
+    pub variables: Vec<String>,
 }
 
 /// Compare token contents without relying on TokenStream's display whitespace.

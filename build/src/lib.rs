@@ -171,16 +171,22 @@ impl BuildConfig {
             let inputs = scanner::scan(&source, &self.macro_names)
                 .map_err(|e| BuildError(format!("{}: {e}", file.display())))?;
             for (index, input) in inputs.into_iter().enumerate() {
-                let compiled =
-                    compiler::compile(&input.css, &namespace, &relative, index, self.minify)
-                        .map_err(|e| {
-                            BuildError(format!(
-                                "{}:{}:{}: {e}",
-                                file.display(),
-                                input.line,
-                                input.column
-                            ))
-                        })?;
+                let compiled = compiler::compile_template(
+                    &input.css,
+                    &namespace,
+                    &relative,
+                    index,
+                    self.minify,
+                    input.interpolations,
+                )
+                .map_err(|e| {
+                    BuildError(format!(
+                        "{}:{}:{}: {e}",
+                        file.display(),
+                        input.line,
+                        input.column
+                    ))
+                })?;
                 css.push_str(&compiled.css);
                 css.push('\n');
                 modules.push(Module {
@@ -189,6 +195,7 @@ impl BuildConfig {
                     column: input.column,
                     fingerprint: input.fingerprint,
                     fields: compiled.fields,
+                    variables: compiled.variables,
                 });
             }
         }

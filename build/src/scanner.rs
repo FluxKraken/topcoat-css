@@ -6,12 +6,14 @@ use std::{
     path::{Path, PathBuf},
 };
 use topcoat_css_core::fingerprint;
+use topcoat_css_core::interpolation;
 
 pub(crate) struct Input {
     pub css: String,
     pub fingerprint: String,
     pub line: usize,
     pub column: usize,
+    pub interpolations: usize,
 }
 
 pub(crate) fn collect_files(path: &Path, files: &mut BTreeSet<PathBuf>) -> Result<()> {
@@ -97,21 +99,32 @@ fn extract(group: &Group, source: &str) -> std::result::Result<Input, String> {
         .next()
         .ok_or("css! requires a CSS body or a string literal")?;
     let start = first.span().start();
-    let css = if let Ok(literal) = syn::parse2::<syn::LitStr>(tokens.clone()) {
-        literal.value()
+    let (css, interpolations) = if let Ok(literal) = syn::parse2::<syn::LitStr>(tokens.clone()) {
+        (literal.value(), 0)
     } else {
         let from = offset(source, group.span_open().end())?;
         let to = offset(source, group.span_close().start())?;
-        source
+        let mut css = source
             .get(from..to)
             .ok_or("CSS source range is invalid")?
-            .to_owned()
+            .to_owned();
+        let (_, expressions) = interpolation::extract(tokens.clone())?;
+        for (index, expression) in expressions.iter().enumerate().rev() {
+            let start = offset(source, expression.start.start())? - from;
+            let end = offset(source, expression.end.end())? - from;
+            css.replace_range(
+                start..end,
+                &format!("var({})", interpolation::placeholder(index)),
+            );
+        }
+        (css, expressions.len())
     };
     Ok(Input {
         css,
         fingerprint: fingerprint(tokens),
         line: start.line,
         column: start.column + 1,
+        interpolations,
     })
 }
 
@@ -130,4 +143,33 @@ fn offset(source: &str, position: LineColumn) -> std::result::Result<usize, Stri
         byte += line.len();
     }
     Err("source line is out of range".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replaces_only_expressions_and_preserves_css_source() {
+        let body = r#"
+            /* $(comment) */
+            .café :hover[data-x$="suffix"] {
+                content: "$(literal) 🦀";
+                color: $(color.as_str());
+                width: calc($({ let n = 3; n * 2 }) * 1px);
+            }
+        "#;
+        let source = format!("fn main() {{ css! {{{body}}}; }}");
+        let inputs = scan(&source, &BTreeSet::from(["css".into()])).unwrap();
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].interpolations, 2);
+        assert_eq!(
+            inputs[0].css,
+            body.replace("$(color.as_str())", "var(--topcoat-css-interpolation-0)")
+                .replace(
+                    "$({ let n = 3; n * 2 })",
+                    "var(--topcoat-css-interpolation-1)"
+                )
+        );
+    }
 }

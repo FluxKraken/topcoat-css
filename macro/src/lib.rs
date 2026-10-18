@@ -5,11 +5,13 @@ mod editor;
 use proc_macro::{Span, TokenStream};
 use quote::quote;
 use topcoat_css_core::{
-    MANIFEST_ENV, MANIFEST_VERSION, Manifest, Module, STYLESHEET_ENV, fingerprint,
+    MANIFEST_ENV, MANIFEST_VERSION, Manifest, Module, STYLESHEET_ENV, fingerprint, interpolation,
 };
 
-/// Return a const-compatible value with a static string field for each
-/// local CSS module export. Requires the `topcoat-css-build` build helper.
+/// Return checked local CSS exports. Use `$(expression)` in declaration values
+/// and apply the returned `.style()` to the element for runtime values.
+/// Without interpolation, the result is const-compatible and Copy.
+/// Requires the `topcoat-css-build` build helper.
 #[proc_macro]
 pub fn css(input: TokenStream) -> TokenStream {
     let span = input
@@ -46,7 +48,8 @@ fn expand_css(input: TokenStream, span: Span) -> Result<TokenStream, String> {
     if manifest.version != MANIFEST_VERSION {
         return Err("incompatible CSS build manifest; use matching topcoat-css and topcoat-css-build versions".into());
     }
-    let tokens = fingerprint(input.into());
+    let input: proc_macro2::TokenStream = input.into();
+    let tokens = fingerprint(input.clone());
     let file =
         fs::canonicalize(&file).map_err(|e| format!("cannot locate {}: {e}", file.display()))?;
     let module = manifest.modules.iter().find(|module| {
@@ -58,16 +61,44 @@ fn expand_css(input: TokenStream, span: Span) -> Result<TokenStream, String> {
         "css! at {}:{}:{} was not collected by the build script; add its source directory with BuildConfig::source(...), register a renamed macro with macro_name(...), and ensure the build script reruns when sources change. Macro-generated CSS is not supported",
         span.file(), span.line(), span.column()
     ))?;
-    module_expansion(module, false).map(Into::into)
+    module_expansion(module, false, expressions(input)?).map(Into::into)
 }
 
 // Both editor entrypoints derive fields from the current buffer and use guarded
 // placeholders. Neither generated CSS nor its manifest participates in analysis.
 fn editor_expansion(input: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, String> {
-    module_expansion(&editor::module(input)?, true)
+    module_expansion(&editor::module(input.clone())?, true, expressions(input)?)
 }
 
-fn module_expansion(module: &Module, editor: bool) -> Result<proc_macro2::TokenStream, String> {
+fn expressions(input: proc_macro2::TokenStream) -> Result<Vec<syn::Expr>, String> {
+    if syn::parse2::<syn::LitStr>(input.clone()).is_ok() {
+        return Ok(Vec::new());
+    }
+    Ok(interpolation::extract(input)?
+        .1
+        .into_iter()
+        .map(|item| item.expression)
+        .collect())
+}
+
+fn runtime_crate() -> Result<proc_macro2::TokenStream, String> {
+    match proc_macro_crate::crate_name("topcoat-css").map_err(|e| e.to_string())? {
+        proc_macro_crate::FoundCrate::Itself => Ok(quote!(::topcoat_css)),
+        proc_macro_crate::FoundCrate::Name(name) => {
+            let ident = syn::parse_str::<syn::Ident>(&name).map_err(|e| e.to_string())?;
+            Ok(quote!(::#ident))
+        }
+    }
+}
+
+fn module_expansion(
+    module: &Module,
+    editor: bool,
+    expressions: Vec<syn::Expr>,
+) -> Result<proc_macro2::TokenStream, String> {
+    if expressions.len() != module.variables.len() {
+        return Err("CSS interpolation does not match the build manifest; rerun the build script with matching topcoat-css and topcoat-css-build versions".into());
+    }
     let fields = module
         .fields
         .keys()
@@ -88,16 +119,55 @@ fn module_expansion(module: &Module, editor: bool) -> Result<proc_macro2::TokenS
             const _: &str = include_str!(env!("TOPCOAT_CSS_MANIFEST"));
         }
     });
+    let mut derives = quote!(Clone, Copy, Debug);
+    let mut storage = quote!();
+    let mut initialize = quote!();
+    let mut style = quote!("");
+    if !expressions.is_empty() {
+        derives = quote!(Clone, Debug);
+        // CSS exports can use any valid field name, including our preferred one.
+        let mut private_name = "__topcoat_css_style".to_owned();
+        while module.fields.contains_key(&private_name) {
+            private_name.push('_');
+        }
+        let private = syn::Ident::new(&private_name, proc_macro2::Span::mixed_site());
+        storage = quote!(#private: ::std::string::String,);
+        style = quote!(&self.#private);
+        let format: String = module
+            .variables
+            .iter()
+            .map(|name| format!("{name}:{{}};"))
+            .collect();
+        let values = if editor {
+            expressions
+                .iter()
+                .map(|expr| quote!(&(#expr)))
+                .collect::<Vec<_>>()
+        } else {
+            let runtime = runtime_crate()?;
+            expressions
+                .iter()
+                .map(|expr| quote!(#runtime::__private::value(&::std::format!("{}", &(#expr)))))
+                .collect()
+        };
+        initialize = quote!(#private: ::std::format!(#format, #(#values),*),);
+    }
     Ok(quote! {{
         #guard
         // Track the artifact read during expansion for Cargo/rustc incremental builds.
         #manifest_dependency
         #[allow(dead_code, non_snake_case)]
-        #[derive(Clone, Copy, Debug)]
+        #[derive(#derives)]
         struct __TopcoatCssModule {
             #(pub #fields: &'static str,)*
+            #storage
         }
-        __TopcoatCssModule { #(#fields: #values,)* }
+        impl __TopcoatCssModule {
+            /// Generated CSS variables to apply with `style=(styles.style())`.
+            #[allow(dead_code)]
+            pub fn style(&self) -> &str { #style }
+        }
+        __TopcoatCssModule { #(#fields: #values,)* #initialize }
     }})
 }
 
@@ -177,6 +247,7 @@ mod tests {
             line: 1,
             column: 1,
             fingerprint: "same tokens".into(),
+            variables: Vec::new(),
             fields: fields
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -222,7 +293,7 @@ mod tests {
                 ..module(&[])
             };
             for editor in [false, true] {
-                let expansion = module_expansion(&module, editor).unwrap();
+                let expansion = module_expansion(&module, editor, Vec::new()).unwrap();
                 let source = directory.path().join("main.rs");
                 fs::write(&source, format!("fn main() {{ let _ = {expansion}; }}")).unwrap();
                 let output = Command::new("rustc")
@@ -244,5 +315,21 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn editor_interpolation_keeps_fields_styles_and_rust_expressions() {
+        let expansion = editor_expansion(quote!(
+            .header { --bg: $(bg.as_str()); width: calc($(width) * 1px); }
+            .style { color: red; }
+        ))
+        .unwrap()
+        .to_string();
+        assert!(expansion.contains("pub header"), "{expansion}");
+        assert!(expansion.contains("pub style"), "{expansion}");
+        assert!(expansion.contains("fn style"), "{expansion}");
+        assert!(expansion.contains("bg . as_str"), "{expansion}");
+        assert!(expansion.contains("width"), "{expansion}");
+        assert!(!expansion.contains("TOPCOAT_CSS_MANIFEST"), "{expansion}");
     }
 }
