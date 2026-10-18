@@ -635,7 +635,7 @@ dependencies = [
 
 [[package]]
 name = "topcoat-css"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cssparser",
  "serde_json",
@@ -645,7 +645,7 @@ dependencies = [
 
 [[package]]
 name = "topcoat-css-build"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "proc-macro2",
  "serde_json",
@@ -656,7 +656,7 @@ dependencies = [
 
 [[package]]
 name = "topcoat-css-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "lightningcss",
  "proc-macro2",
@@ -667,7 +667,7 @@ dependencies = [
 
 [[package]]
 name = "topcoat-css-macro"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
