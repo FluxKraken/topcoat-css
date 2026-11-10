@@ -222,16 +222,24 @@ pub fn stylesheet(input: TokenStream) -> TokenStream {
             Err(e) => return e.to_compile_error().into(),
         }
     };
-    if env::var_os(STYLESHEET_ENV).is_none() {
-        return error(
-            span,
-            "stylesheet! requires topcoat_css_build::BuildConfig::new().render() in build.rs"
-                .into(),
-        );
-    }
+    let stylesheet = match env::var(STYLESHEET_ENV) {
+        Ok(path) => syn::LitStr::new(&path, span.into()),
+        Err(env::VarError::NotPresent) => {
+            return error(
+                span,
+                "stylesheet! requires topcoat_css_build::BuildConfig::new().render() in build.rs"
+                    .into(),
+            );
+        }
+        Err(env::VarError::NotUnicode(_)) => {
+            return error(span, "TOPCOAT_CSS_STYLESHEET must be a UTF-8 path".into());
+        }
+    };
     quote! {{
+        // Track both the environment variable and file for incremental builds.
         const _: &str = include_str!(env!("TOPCOAT_CSS_STYLESHEET"));
-        #topcoat::asset::asset!(env!("TOPCOAT_CSS_STYLESHEET"))
+        // Topcoat 0.12 parses the path as a literal before nested macros expand.
+        #topcoat::asset::asset!(#stylesheet)
     }}
     .into()
 }

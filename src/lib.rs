@@ -4,11 +4,11 @@
 //! fields, and load one stylesheet from your layout.
 //!
 //! ```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
-//! use topcoat::{Result, view::{View, component, view}};
+//! use topcoat::{Result, context::Cx, view::{View, component, view}};
 //! use topcoat_css::css;
 //!
 //! #[component]
-//! async fn user_card() -> Result<impl View> {
+//! async fn user_card(cx: &Cx) -> Result<impl View> {
 //!     let style = css! {
 //!         .card {
 //!             display: grid;
@@ -41,12 +41,12 @@
 //!
 //! ```toml
 //! [dependencies]
-//! topcoat = { version = "0.7", default-features = false, features = ["asset", "view", "router", "serve", "discover"] }
-//! topcoat-css = "=0.1.2"
+//! topcoat = { version = "0.12", default-features = false, features = ["asset", "view", "router", "serve", "discover"] }
+//! topcoat-css = "=0.1.5"
 //! tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 //!
 //! [build-dependencies]
-//! topcoat-css-build = "=0.1.2"
+//! topcoat-css-build = "=0.1.5"
 //! ```
 //!
 //! Keep `topcoat-css` and `topcoat-css-build` on matching versions. The example
@@ -72,12 +72,13 @@
 //! ```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
 //! use topcoat::{
 //!     Result,
+//!     context::Cx,
 //!     router::{Slot, layout},
 //!     view::{View, view},
 //! };
 //!
 //! #[layout("/")]
-//! async fn root_layout(slot: Slot<'_>) -> Result<impl View> {
+//! async fn root_layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
 //!     Ok(view! {
 //!         <!DOCTYPE html>
 //!         <html>
@@ -122,7 +123,7 @@
 //!
 //! `stylesheet!()` returns a const-compatible `topcoat::asset::Asset`.
 //! The handle must be used in a live code path so Topcoat can discover its
-//! declaration. _See [Topcoat's asset documentation](https://docs.rs/topcoat/0.7.0/topcoat/asset/index.html)._
+//! declaration. _See [Topcoat's asset documentation](https://docs.rs/topcoat/0.12.0/topcoat/asset/index.html)._
 //!
 //! The CSS file is generated in Cargo's `OUT_DIR`. Topcoat copies it into its
 //! asset bundle and gives it a content-hashed URL. Build and bundle each deployment
@@ -194,11 +195,11 @@
 //! Use `$(expression)` in token-body declaration values to capture Rust values:
 //!
 //! ```rust,ignore (compiled as a Cargo application by tests/doc_examples.rs)
-//! use topcoat::{Result, view::{View, component, view}};
+//! use topcoat::{Result, context::Cx, view::{View, component, view}};
 //! use topcoat_css::css;
 //!
 //! #[component]
-//! async fn header(bg: &str, fg: &str) -> Result<impl View> {
+//! async fn header(cx: &Cx, bg: &str, fg: &str) -> Result<impl View> {
 //!     let colors = css! {
 //!         .header {
 //!             --header-bg: $(bg);
